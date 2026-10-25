@@ -98,6 +98,7 @@ class Index(table: ColumnFamilyStore, indexMetadata: IndexMetadata)
 
             val future = CompactionManager.instance.submitIndexBuild(builder)
             FBUtilities.waitOnFuture(future)
+            service.commit()
           } finally {
             if (viewFragment != null) viewFragment.close()
             if (sstables != null) sstables.close()
