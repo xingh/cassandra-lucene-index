@@ -157,6 +157,58 @@ directory is ``/var/lib/cassandra/data``, and each index is placed next to the S
 
 For more details about Apache Cassandra please see its `documentation <http://cassandra.apache.org/>`__.
 
+Building with Docker-tested restart check
+-----------------------------------------
+
+These steps build the plugin for one exact release and check that a newly built index survives a Cassandra restart.
+They were used for the 4.1.8 release; for other versions, change the tag and the Cassandra image.
+
+Requirements: JDK 8 or later (tested with OpenJDK 17), Maven 3.8.x (or ``./mvnw``), Docker, and ``git``.
+
+.. code-block:: bash
+
+    git clone https://github.com/xingh/cassandra-lucene-index
+    cd cassandra-lucene-index
+    git checkout release/cassandra-4.1.8-1.0.2      # the stock 4.1.8-1.0.2 release plus the restart fix
+    mvn -B -pl plugin -am -DskipTests package       # or: ./mvnw -B -pl plugin -am -DskipTests package
+    ls plugin/target/cassandra-lucene-index-plugin-*.jar
+
+To build the stock release for comparison, check out the tag ``cassandra-4.1.8-1.0.2`` instead.
+
+If Maven Central rate-limits downloads (HTTP 429), point Maven at Google's mirror of Maven Central in
+``~/.m2/settings.xml``:
+
+.. code-block:: xml
+
+    <settings>
+      <mirrors>
+        <mirror>
+          <id>gcs-central</id>
+          <mirrorOf>*</mirrorOf>
+          <url>https://maven-central.storage-download.googleapis.com/maven2/</url>
+        </mirror>
+      </mirrors>
+    </settings>
+
+Then run the restart test. It starts a ``cassandra:4.1.8`` container with the jar mounted in ``lib/``, loads 2,000
+rows, flushes, creates a Lucene index, waits for the build to finish, restarts Cassandra without writing anything, and
+compares the Lucene search count before and after the restart:
+
+.. code-block:: bash
+
+    scripts/docker-restart-test.sh                                   # uses plugin/target/*.jar
+    scripts/docker-restart-test.sh path/to/plugin.jar stock          # any jar, custom container label
+    CASSANDRA_IMAGE=cassandra:4.1.8 ROWS=2000 scripts/docker-restart-test.sh
+
+Expected results:
+
+-  Patched jar: ``segments_1`` is listed after the build, both counts are 2000, and the script prints ``PASS``.
+-  Stock ``4.1.8-1.0.2`` jar: no ``segments_N`` file after the build, only ``write.lock`` after the restart, a count
+   of 0 after the restart, and the script prints ``FAIL``.
+
+The index MBean (``com.stratio.cassandra.lucene:type=Lucene,keyspace=<ks>,table=<table>,index=<index>``) also exposes
+``NumDocs`` and a ``commit`` operation, which are useful for the same check on a real node.
+
 Examples
 --------
 
